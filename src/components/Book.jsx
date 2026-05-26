@@ -1,4 +1,5 @@
 import { useRef, useEffect, useState, useCallback, memo } from 'react'
+import { flushSync } from 'react-dom'
 import HTMLFlipBook from 'react-pageflip'
 import { pages } from '../data/pages'
 import { usePaperTexture } from '../hooks/usePaperTexture'
@@ -27,12 +28,10 @@ function calcDims() {
 
 const SketchPage = memo(function SketchPage({ page, pageNum, side, isLoaded }) {
   const gutterClass = side === 'left' ? 'gutter-left' : 'gutter-right'
-  const numClass    = side === 'left' ? 'page-num-left' : 'page-num-right'
 
   if (page.type === 'blank') {
     return (
       <div className={`page-inner ${gutterClass}`}>
-        <span className={`page-num ${numClass}`}>{pageNum}</span>
       </div>
     )
   }
@@ -44,7 +43,6 @@ const SketchPage = memo(function SketchPage({ page, pageNum, side, isLoaded }) {
         {page.attribution && (
           <p className="page-attribution">{page.attribution}</p>
         )}
-        <span className={`page-num ${numClass}`}>{pageNum}</span>
       </div>
     )
   }
@@ -71,7 +69,6 @@ const SketchPage = memo(function SketchPage({ page, pageNum, side, isLoaded }) {
         {page.caption && (
           <p className="page-caption">{page.caption}</p>
         )}
-        <span className={`page-num ${numClass}`}>{pageNum}</span>
       </div>
     )
   }
@@ -91,7 +88,6 @@ const SketchPage = memo(function SketchPage({ page, pageNum, side, isLoaded }) {
       {page.caption && (
         <p className="page-caption">{page.caption}</p>
       )}
-      <span className={`page-num ${numClass}`}>{pageNum}</span>
     </div>
   )
 })
@@ -101,7 +97,9 @@ const SketchPage = memo(function SketchPage({ page, pageNum, side, isLoaded }) {
 export default function Book() {
   const bookRef     = useRef()
   const sceneRef    = useRef()
-  const audioRef    = useRef(null)
+  const audioRef        = useRef(null)
+  const closeAudioRef   = useRef(null)
+  const flipDirectionRef = useRef('forward') // 'forward' | 'backward'
   const [dims, setDims] = useState(calcDims)
   const [hintVisible, setHintVisible] = useState(true)
   // True when the cover is showing alone — removes the spread box-shadow
@@ -116,10 +114,12 @@ export default function Book() {
   // Generate and apply the paper fibre texture once on mount
   usePaperTexture(600)
 
-  // Preload the page-turn audio
+  // Preload audio
   useEffect(() => {
-    audioRef.current = new Audio('/turnpage.m4a')
+    audioRef.current = new Audio('/PageTurn2.m4a')
     audioRef.current.preload = 'auto'
+    closeAudioRef.current = new Audio('/BookClose.m4a')
+    closeAudioRef.current.preload = 'auto'
   }, [])
 
   // Responsive sizing
@@ -135,13 +135,28 @@ export default function Book() {
     return () => clearTimeout(t)
   }, [])
 
-  // Fires at flip START — play audio immediately so sound leads the animation
+  // Fires at flip START — play audio immediately so sound leads the animation.
+  // Also preemptively set atCover when we detect we're at the cover edge so
+  // the shadow suppression kicks in before the animation completes, not after.
+  // If we're wrong about direction, handleFlip corrects it at animation end.
   const handleChangeState = useCallback((e) => {
     if (e.data === 'flipping') {
-      if (audioRef.current) {
-        audioRef.current.currentTime = 0
-        audioRef.current.play().catch(() => {})
+      const pg = bookRef.current?.pageFlip()?.getCurrentPageIndex()
+      // Play BookClose when closing the book at either end:
+      //   forward from the last spread → back cover
+      //   backward from the first spread → front cover
+      const isLastSpread  = pg >= pages.length - 1
+      const isFirstSpread = pg <= 1
+      const isClosing = (isLastSpread  && flipDirectionRef.current === 'forward') ||
+                        (isFirstSpread && flipDirectionRef.current === 'backward')
+      const sfx = isClosing ? closeAudioRef.current : audioRef.current
+      if (sfx) {
+        sfx.currentTime = 0
+        sfx.play().catch(() => {})
       }
+      // flushSync forces the DOM update before the next paint so --at-cover
+    // is guaranteed to be on the element before any shadow can appear.
+    if (isFirstSpread || isLastSpread) flushSync(() => setAtCover(true))
     }
   }, [])
 
@@ -183,22 +198,37 @@ export default function Book() {
 
     const THRESHOLD = 50
     if (accumDelta.current > THRESHOLD) {
+      flipDirectionRef.current = 'forward'
       bookRef.current?.pageFlip().flipNext()
       lastFlip.current   = now
       accumDelta.current = 0
     } else if (accumDelta.current < -THRESHOLD) {
+      flipDirectionRef.current = 'backward'
       bookRef.current?.pageFlip().flipPrev()
       lastFlip.current   = now
       accumDelta.current = 0
     }
   }, [])
 
+  // Stamp flip direction from pointer position (right half = forward, left = backward).
+  // Runs before react-pageflip's own mousedown handler so the direction is
+  // always set before handleChangeState fires.
+  const handlePointerDown = useCallback((e) => {
+    const rect = sceneRef.current?.getBoundingClientRect()
+    if (!rect) return
+    flipDirectionRef.current = e.clientX >= rect.left + rect.width / 2 ? 'forward' : 'backward'
+  }, [])
+
   useEffect(() => {
     const el = sceneRef.current
     if (!el) return
     el.addEventListener('wheel', handleWheel, { passive: false })
-    return () => el.removeEventListener('wheel', handleWheel)
-  }, [handleWheel])
+    el.addEventListener('pointerdown', handlePointerDown)
+    return () => {
+      el.removeEventListener('wheel', handleWheel)
+      el.removeEventListener('pointerdown', handlePointerDown)
+    }
+  }, [handleWheel, handlePointerDown])
 
   // ── Page side helper ──────────────────────────────────────────────────
   // Child order: [cover(0), data[0](1) … data[49](50), back-cover(51)]

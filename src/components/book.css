@@ -35,6 +35,8 @@
   right: 0;
   width: 38%;
   pointer-events: none;
+  opacity: 1;
+  transition: opacity 0.5s ease;
   background: linear-gradient(to left,
     rgba(10, 8, 6, 0.23)  0%,
     rgba(10, 8, 6, 0.07)  8%,
@@ -52,6 +54,8 @@
   left: 0;
   width: 38%;
   pointer-events: none;
+  opacity: 1;
+  transition: opacity 0.5s ease;
   background: linear-gradient(to right,
     rgba(10, 8, 6, 0.23)  0%,
     rgba(10, 8, 6, 0.07)  8%,
@@ -84,6 +88,18 @@
   box-shadow: none;
 }
 
+/* Suppress all spine shadows when at either cover — no spread surface to
+   cast curvature shadows against on either side.
+   Uses opacity (not display:none) so the transition fires correctly,
+   and transition:none ensures it vanishes instantly (no visible flash). */
+.sketchbook.--at-cover .stf__item.--left .page-inner::after,
+.sketchbook.--at-cover .stf__item.--left .page-text-inner::after,
+.sketchbook.--at-cover .stf__item.--right .page-inner::after,
+.sketchbook.--at-cover .stf__item.--right .page-text-inner::after {
+  opacity: 0;
+  transition: none;
+}
+
 /* ─── Every page shares the paper base ──────────────────────────────── */
 .page {
   overflow: hidden;
@@ -96,8 +112,28 @@
 
 /* ─── Cover pages ────────────────────────────────────────────────────── */
 .page-cover {
-  background-color: #1A1510 !important;
-  background-image: linear-gradient(160deg, #2C2218 0%, #1A1510 100%) !important;
+  background-color: #D9D8D7 !important;
+  background-image: url('/LinenTexture.avif') !important;
+  background-size: 33.333% 33.333% !important;
+  background-repeat: repeat !important;
+}
+
+/* Ambient lighting overlay — sits above the texture, below any content.
+   Three stacked gradients:
+     1. Soft specular highlight (upper-centre, as if lit from above)
+     2. Edge vignette (corners and bottom fall into shadow)
+     3. Subtle warm-to-cool directional wash */
+.page-cover::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(ellipse at 50% 20%, rgba(255, 252, 245, 0.13) 0%, transparent 55%),
+    radial-gradient(ellipse at 50% 115%, rgba(0, 0, 0, 0.22) 0%, transparent 58%),
+    radial-gradient(ellipse at 0% 50%,   rgba(0, 0, 0, 0.10) 0%, transparent 50%),
+    radial-gradient(ellipse at 100% 50%, rgba(0, 0, 0, 0.10) 0%, transparent 50%),
+    linear-gradient(160deg, rgba(255,252,245,0.05) 0%, rgba(0,0,0,0.07) 100%);
 }
 
 .cover-inner {

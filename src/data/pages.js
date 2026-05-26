@@ -1,7 +1,7 @@
 // Pages built from the actual files on disk — organised by subfolder, numerical order.
 // Doodles from Hel: 27 GIFs (1–27)
-// Covid doodles: 23 PNGs (1–22, 27)
-// Total: 50 pages
+// Blank: 1 (padding to keep page count even so the last spread can flip)
+// Total: 28 pages
 
 export const pages = [
   // ── Doodles from Hel ─────────────────────────────────────────────────────
@@ -33,28 +33,6 @@ export const pages = [
   { type: 'sketch', image: '/sketches/Doodles from Hel/26.gif' },
   { type: 'sketch', image: '/sketches/Doodles from Hel/27.gif' },
 
-  // ── Covid doodles ────────────────────────────────────────────────────────
-  { type: 'sketch', image: '/sketches/Covid doodles/1.png' },
-  { type: 'sketch', image: '/sketches/Covid doodles/2.png' },
-  { type: 'sketch', image: '/sketches/Covid doodles/3.png' },
-  { type: 'sketch', image: '/sketches/Covid doodles/4.png' },
-  { type: 'sketch', image: '/sketches/Covid doodles/5.png' },
-  { type: 'sketch', image: '/sketches/Covid doodles/6.png' },
-  { type: 'sketch', image: '/sketches/Covid doodles/7.png' },
-  { type: 'sketch', image: '/sketches/Covid doodles/8.png' },
-  { type: 'sketch', image: '/sketches/Covid doodles/9.png' },
-  { type: 'sketch', image: '/sketches/Covid doodles/10.png' },
-  { type: 'sketch', image: '/sketches/Covid doodles/11.png' },
-  { type: 'sketch', image: '/sketches/Covid doodles/12.png' },
-  { type: 'sketch', image: '/sketches/Covid doodles/13.png' },
-  { type: 'sketch', image: '/sketches/Covid doodles/14.png' },
-  { type: 'sketch', image: '/sketches/Covid doodles/15.png' },
-  { type: 'sketch', image: '/sketches/Covid doodles/16.png' },
-  { type: 'sketch', image: '/sketches/Covid doodles/17.png' },
-  { type: 'sketch', image: '/sketches/Covid doodles/18.png' },
-  { type: 'sketch', image: '/sketches/Covid doodles/19.png' },
-  { type: 'sketch', image: '/sketches/Covid doodles/20.png' },
-  { type: 'sketch', image: '/sketches/Covid doodles/21.png' },
-  { type: 'sketch', image: '/sketches/Covid doodles/22.png' },
-  { type: 'sketch', image: '/sketches/Covid doodles/27.png' },
+  // ── Padding ──────────────────────────────────────────────────────────────────
+  { type: 'blank' },
 ]
