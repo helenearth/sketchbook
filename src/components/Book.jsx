@@ -7,18 +7,36 @@ import './book.css'
 
 // Page aspect ratio — 1 = square pages
 const PAGE_AR = 1
-const MARGIN  = 52         // px each side
+const MARGIN  = 80         // px each side — extra breathing room for flip animation
+const ROTATE_BREAKPOINT = 900  // px — rotate 90° below this viewport width
 
 function calcDims() {
-  const availW = window.innerWidth  - MARGIN * 2
-  const availH = window.innerHeight - MARGIN * 2
+  const vw = window.innerWidth
+  const vh = window.innerHeight
+  const shouldRotate = vw < ROTATE_BREAKPOINT
+
+  if (shouldRotate) {
+    // Book renders landscape (2×pageW wide) but is visually rotated 90°.
+    // After rotation: pageH → visual width, 2×pageW → visual height.
+    // PAGE_AR = 1 → pageH = pageW. Fit constraints:
+    //   pageW ≤ vw − 2×MARGIN  (visual width after rotation)
+    //   2×pageW ≤ vh − 2×MARGIN (visual height after rotation)
+    const pageW = Math.min(
+      Math.floor(vw - MARGIN * 2),
+      Math.floor((vh - MARGIN * 2) / 2)
+    )
+    return { width: pageW, height: pageW, shouldRotate: true }
+  }
+
+  const availW = vw - MARGIN * 2
+  const availH = vh - MARGIN * 2
   let pageW = Math.floor(availW / 2)
   let pageH = Math.floor(pageW * PAGE_AR)
   if (pageH > availH) {
     pageH = availH
     pageW = Math.floor(pageH / PAGE_AR)
   }
-  return { width: pageW, height: pageH }
+  return { width: pageW, height: pageH, shouldRotate: false }
 }
 
 // ─── Page templates ───────────────────────────────────────────────────────────
@@ -97,13 +115,22 @@ const SketchPage = memo(function SketchPage({ page, pageNum, side, isLoaded }) {
 export default function Book() {
   const bookRef     = useRef()
   const sceneRef    = useRef()
-  const audioRef        = useRef(null)
-  const closeAudioRef   = useRef(null)
+  const audioRef        = useRef(null)   // page turn
+  const openAudioRef    = useRef(null)   // cover opens
+  const closeAudioRef   = useRef(null)   // cover closes
   const flipDirectionRef = useRef('forward') // 'forward' | 'backward'
   const [dims, setDims] = useState(calcDims)
   const [hintVisible, setHintVisible] = useState(true)
-  // True when the cover is showing alone — removes the spread box-shadow
+  // True when the cover is showing alone — controls page-shading overlay suppression.
   const [atCover, setAtCover] = useState(true)
+  // Controls which cover is showing (for overlay suppression logic).
+  const [coverSide, setCoverSide] = useState('front') // 'front' | 'back'
+  // Controls the drop-shadow element independently from atCover.
+  // 'front'/'back' = half-width shadow under the visible cover.
+  // 'open' = full-width shadow under the open spread.
+  // Deliberately lags behind atCover: switches to 'open' only at flip END so
+  // the full-width shadow never pops in while the opposite page is still empty.
+  const [shadowMode, setShadowMode] = useState('front') // 'front' | 'back' | 'open'
 
   // Lazy-load images: only decode pages close to the current position.
   // The Set grows monotonically (once loaded, always loaded) so already-
@@ -118,6 +145,8 @@ export default function Book() {
   useEffect(() => {
     audioRef.current = new Audio('/PageTurn2.m4a')
     audioRef.current.preload = 'auto'
+    openAudioRef.current = new Audio('/BookOpen2.m4a')
+    openAudioRef.current.preload = 'auto'
     closeAudioRef.current = new Audio('/BookClose.m4a')
     closeAudioRef.current.preload = 'auto'
   }, [])
@@ -136,36 +165,67 @@ export default function Book() {
   }, [])
 
   // Fires at flip START — play audio immediately so sound leads the animation.
-  // Also preemptively set atCover when we detect we're at the cover edge so
-  // the shadow suppression kicks in before the animation completes, not after.
-  // If we're wrong about direction, handleFlip corrects it at animation end.
+  // Also synchronously update overlay/shadow state before the first animation frame:
+  //
+  //   Closing to a cover → coverSide + correct shadowMode only.
+  //     atCover deliberately stays false so the relevant overlay (right page when
+  //     front cover closes, left page when back cover closes) remains visible during
+  //     the animation. handleFlip sets atCover=true (transition:none) at flip END.
+  //
+  //   Opening from a cover → atCover=false + shadowMode='transition'.
+  //     Overlays begin fading in as the cover lifts.
+  //     shadowMode switches to 'transition' so the book-shadow disappears entirely
+  //     during the animation (nothing can bleed onto the revealed content page).
+  //     It advances to 'open' only at flip END (handleFlip).
   const handleChangeState = useCallback((e) => {
     if (e.data === 'flipping') {
       const pg = bookRef.current?.pageFlip()?.getCurrentPageIndex()
-      // Play BookClose when closing the book at either end:
-      //   forward from the last spread → back cover
-      //   backward from the first spread → front cover
       const isLastSpread  = pg >= pages.length - 1
       const isFirstSpread = pg <= 1
+      const isAtCover     = pg === 0 || pg >= pages.length
       const isClosing = (isLastSpread  && flipDirectionRef.current === 'forward') ||
                         (isFirstSpread && flipDirectionRef.current === 'backward')
-      const sfx = isClosing ? closeAudioRef.current : audioRef.current
+      const isOpening = isAtCover && !isClosing
+      const sfx = isClosing ? closeAudioRef.current
+                : isOpening ? openAudioRef.current
+                : audioRef.current
       if (sfx) {
         sfx.currentTime = 0
         sfx.play().catch(() => {})
       }
-      // flushSync forces the DOM update before the next paint so --at-cover
-    // is guaranteed to be on the element before any shadow can appear.
-    if (isFirstSpread || isLastSpread) flushSync(() => setAtCover(true))
+      if (isFirstSpread || isLastSpread) {
+        flushSync(() => {
+          if (isClosing) {
+            const side = (isLastSpread && flipDirectionRef.current === 'forward') ? 'back' : 'front'
+            // Do NOT setAtCover(true) here — overlays remain visible during the animation.
+            setCoverSide(side)
+            setShadowMode(side)   // position shadow on the correct half immediately
+          } else {
+            setAtCover(false)        // overlays fade in during the animation
+            setShadowMode('transition') // suppress book-shadow entirely during cover-open animation
+          }
+        })
+      }
     }
   }, [])
 
-  // Fires at flip END — update cover flag and eagerly load the surrounding
-  // spreads so images are ready before the user reaches them.
+  // Fires at flip END — update cover/shadow flags and eagerly load surrounding spreads.
   const handleFlip = useCallback((e) => {
     if (e?.data !== undefined) {
       const pg = e.data
-      setAtCover(pg === 0 || pg === pages.length + 1)
+      const nowAtCover = pg === 0 || pg === pages.length + 1
+      setAtCover(nowAtCover)
+      if (pg === 0) {
+        setCoverSide('front')
+        setShadowMode('front')
+      } else if (pg === pages.length + 1) {
+        setCoverSide('back')
+        setShadowMode('back')
+      } else {
+        // Landed on a content spread — expand shadow to full width now that
+        // both pages are visible and the animation is complete.
+        setShadowMode('open')
+      }
       setLoadedPages(prev => {
         const next = new Set(prev)
         // Load 2 spreads behind and 3 spreads ahead of the landing page
@@ -210,14 +270,19 @@ export default function Book() {
     }
   }, [])
 
-  // Stamp flip direction from pointer position (right half = forward, left = backward).
+  // Stamp flip direction from pointer position.
+  // Non-rotated: right half = forward, left = backward.
+  // Rotated 90°: the original right page appears at the bottom, so
+  //              bottom half = forward, top half = backward.
   // Runs before react-pageflip's own mousedown handler so the direction is
   // always set before handleChangeState fires.
   const handlePointerDown = useCallback((e) => {
     const rect = sceneRef.current?.getBoundingClientRect()
     if (!rect) return
-    flipDirectionRef.current = e.clientX >= rect.left + rect.width / 2 ? 'forward' : 'backward'
-  }, [])
+    flipDirectionRef.current = dims.shouldRotate
+      ? (e.clientY >= rect.top  + rect.height / 2 ? 'forward' : 'backward')
+      : (e.clientX >= rect.left + rect.width  / 2 ? 'forward' : 'backward')
+  }, [dims.shouldRotate])
 
   useEffect(() => {
     const el = sceneRef.current
@@ -238,18 +303,27 @@ export default function Book() {
 
   return (
     <>
-      <div ref={sceneRef} className="book-scene">
+      <div
+        ref={sceneRef}
+        className={`book-scene${dims.shouldRotate ? ' book-scene--rotated' : ''}`}
+        onContextMenu={(e) => e.preventDefault()}
+      >
+        {/* Shadow sits behind the book — positioned to match only the visible area */}
+        <div
+          aria-hidden="true"
+          className={`book-shadow book-shadow--${shadowMode}`}
+        />
         <HTMLFlipBook
           ref={bookRef}
           width={dims.width}
           height={dims.height}
           size="fixed"
-          drawShadow
-          maxShadowOpacity={0.38}
+          drawShadow={true}
+          maxShadowOpacity={0.4}
           showCover
           usePortrait={false}
           flippingTime={880}
-          className={`sketchbook${atCover ? ' --at-cover' : ''}`}
+          className={`sketchbook${atCover ? ' --at-cover' : ''}${shadowMode === 'open' ? ' --shadow-open' : ''}`}
           mobileScrollSupport={false}
           clickEventForward={false}
           useMouseEvents
@@ -258,7 +332,7 @@ export default function Book() {
           onChangeState={handleChangeState}
         >
           {/* ── Front cover ── */}
-          <div className="page page-cover" />
+          <div className="page page-cover page-cover--front" />
 
           {/* ── Content pages ── */}
           {pages.map((page, i) => (
@@ -273,7 +347,7 @@ export default function Book() {
           ))}
 
           {/* ── Back cover ── */}
-          <div className="page page-cover" />
+          <div className="page page-cover page-cover--back" />
 
         </HTMLFlipBook>
 

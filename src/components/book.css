@@ -1,76 +1,105 @@
 /* ─── Scene wrapper ──────────────────────────────────────────────────── */
 /* NOTE: no `filter` here — CSS filter creates a new compositing layer   */
 /* that breaks react-pageflip's transform-style:preserve-3d flip.        */
+/* scale(0.85) gives the flip animation room to breathe: during a 3D     */
+/* cover flip the perspective-foreshortened near edge visually extends   */
+/* well beyond the book's DOM bounds. The scale compresses the entire     */
+/* rendered subtree — including that 3D overshoot — before compositing.  */
+/* Unlike filter, transform on a non-preserve-3d ancestor does NOT       */
+/* flatten descendants' preserve-3d contexts, so the flip is unaffected. */
 .book-scene {
   position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  user-select: none;
+  -webkit-user-select: none;
+  transform: scale(0.85);
 }
 
-/* ─── Spine curvature shadows ────────────────────────────────────────── */
-/* Shadows live INSIDE each page element, as ::after on .page-inner.     */
+/* ─── Portrait / small-screen rotation (< 900 px wide) ──────────────── */
+/* Tablets and phones display the landscape book rotated 90° to fill the  */
+/* portrait viewport. position:fixed removes it from the #root flex flow  */
+/* so the landscape layout-box can't cause horizontal scrollbar overflow.  */
+/* translate(-50%,-50%) centres on the viewport; rotate() tips it upright. */
+.book-scene--rotated {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%) rotate(90deg);
+}
+
+/* ─── Open-spread page shading overlays ─────────────────────────────── */
+/* Overlays live INSIDE each page element, as ::after on .page-inner.    */
 /* react-pageflip stacks pages with z-index (stf__block is flat/2D, not  */
 /* preserve-3d). The turning page receives a higher z-index, which covers */
-/* the entire stationary page stacking context — including these shadows. */
-/* No z-index on the shadows themselves; they participate naturally in    */
+/* the entire stationary page stacking context — including these overlays.*/
+/* No z-index on the overlays themselves; they participate naturally in   */
 /* their page's stacking context and stay invisible to the turning page.  */
 /*                                                                        */
 /* .book-scene::before/::after cannot work: ::before is beneath the      */
 /* entire book (hidden by opaque pages), ::after is above the entire book */
 /* (including the turning page — the exact bug this replaces).           */
 
-/* ─── Spine curvature shadows ────────────────────────────────────────── */
-/* Keyed off react-pageflip's own .--left / .--right classes on .stf__item */
-/* so the shadow always tracks whichever side a page is actually on,        */
-/* regardless of its index. Multi-stop gradient simulates the exponential   */
-/* light falloff of a page bowing away from the viewer near the binding.    */
+/* ─── Open-spread page shading ───────────────────────────────────────── */
+/* Full-page gradient overlays from exact Figma fills (nodes 173:73 and    */
+/* 173:74). Keyed off react-pageflip's .--left / .--right classes on       */
+/* .stf__item so shading always tracks the current page position.          */
 
-/* Page on the LEFT side of the spread: shadow on its RIGHT (spine) edge */
+/* Left page — faint outer-edge darkening, clear centre, spine hint */
 .stf__item.--left .page-inner::after,
 .stf__item.--left .page-text-inner::after {
   content: '';
   position: absolute;
-  top: 0; bottom: 0;
-  right: 0;
-  width: 38%;
+  inset: 0;
   pointer-events: none;
   opacity: 1;
   transition: opacity 0.5s ease;
-  background: linear-gradient(to left,
-    rgba(10, 8, 6, 0.23)  0%,
-    rgba(10, 8, 6, 0.07)  8%,
-    rgba(10, 8, 6, 0.01) 20%,
-    rgba(10, 8, 6, 0)    100%
+  background: linear-gradient(90deg,
+    rgba(0, 0, 0, 0.03)       10%,
+    rgba(0, 0, 0, 0)          70%,
+    rgba(0, 0, 0, 0.04)       90%,
+    rgba(255, 255, 255, 0.05) 100%
   );
 }
 
-/* Page on the RIGHT side of the spread: shadow on its LEFT (spine) edge */
+/* Right page — spine shadow fading to specular highlight, gentle far-edge darkening */
 .stf__item.--right .page-inner::after,
 .stf__item.--right .page-text-inner::after {
   content: '';
   position: absolute;
-  top: 0; bottom: 0;
-  left: 0;
-  width: 38%;
+  inset: 0;
   pointer-events: none;
   opacity: 1;
   transition: opacity 0.5s ease;
-  background: linear-gradient(to right,
-    rgba(10, 8, 6, 0.23)  0%,
-    rgba(10, 8, 6, 0.07)  8%,
-    rgba(10, 8, 6, 0.01) 20%,
-    rgba(10, 8, 6, 0)    100%
+  background: linear-gradient(90deg,
+    rgba(0, 0, 0, 0.15)        2%,
+    rgba(255, 255, 255, 0)    15%,
+    rgba(255, 255, 255, 0.05) 20%,
+    rgba(0, 0, 0, 0.03)       50%
   );
 }
 
-/* ─── react-pageflip container — shadow lives here, NOT on the scene ─── */
+/* ─── react-pageflip container ──────────────────────────────────────── */
+/* Shadow is handled by .book-shadow, not box-shadow here, so the shadow */
+/* can be sized to the visible area (cover = half width, spread = full). */
 .sketchbook {
   display: block !important;
-  box-shadow:
-    0 24px 64px rgba(0, 0, 0, 0.22),
-    0 8px 20px rgba(0, 0, 0, 0.14),
-    0 2px 5px rgba(0, 0, 0, 0.10);
+}
+
+/* ─── Turn-shadow: suppress all four during cover animations ─────────── */
+/* The library uses rotateY(180deg) with transform-origin at the spine to  */
+/* flip both stf__hardShadow (first half of flip) and stf__hardInnerShadow */
+/* (second half) into the opposite page's area — that's the rogue shadow.  */
+/* stf__outerShadow / stf__innerShadow (soft-page equivalents) get the     */
+/* same treatment for symmetry. All four are gated off whenever shadowMode  */
+/* is not 'open': that covers every cover open/close transition. During    */
+/* content page turns shadowMode is always 'open' so nothing is suppressed. */
+.sketchbook:not(.--shadow-open) .stf__outerShadow,
+.sketchbook:not(.--shadow-open) .stf__innerShadow,
+.sketchbook:not(.--shadow-open) .stf__hardShadow,
+.sketchbook:not(.--shadow-open) .stf__hardInnerShadow {
+  opacity: 0 !important;
 }
 
 /* ─── Flip leaf backdrop — always white ────────────────────────────────── */
@@ -83,15 +112,63 @@
   background-image: none !important;
 }
 
-/* Remove the spread shadow when the cover is showing alone. */
-.sketchbook.--at-cover {
+/* ─── Drop shadow — dedicated element behind the book ───────────────── */
+/* Sits behind the HTMLFlipBook in DOM order so it's naturally behind it. */
+/* Sized to match only the visible area so the shadow never bleeds over   */
+/* the empty half of the book div when a single cover is showing.         */
+.book-shadow {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  pointer-events: none;
+}
+
+/* Open spread — shadow spans the full two-page width */
+.book-shadow--open {
+  left: 0;
+  right: 0;
+  box-shadow:
+    0 3px 6px  rgba(0, 0, 0, 0.06),
+    0 10px 32px rgba(0, 0, 0, 0.08),
+    0 28px 72px rgba(0, 0, 0, 0.05);
+}
+
+/* Cover opening animation — no book-shadow at all so nothing can bleed
+   onto the content page being revealed underneath the turning cover. */
+.book-shadow--transition {
+  left: 0;
+  right: 0;
   box-shadow: none;
 }
 
-/* Suppress all spine shadows when at either cover — no spread surface to
-   cast curvature shadows against on either side.
-   Uses opacity (not display:none) so the transition fires correctly,
-   and transition:none ensures it vanishes instantly (no visible flash). */
+/* Front cover occupies the RIGHT half of the book div.
+   clip-path prevents the box-shadow from bleeding LEFT onto the revealed spread. */
+.book-shadow--front {
+  left: 50%;
+  right: 0;
+  clip-path: inset(-200px -200px -200px 0);
+  box-shadow:
+    0 3px 6px  rgba(0, 0, 0, 0.07),
+    0 10px 32px rgba(0, 0, 0, 0.09),
+    0 28px 64px rgba(0, 0, 0, 0.06);
+}
+
+/* Back cover occupies the LEFT half of the book div.
+   clip-path prevents the box-shadow from bleeding RIGHT onto the revealed spread. */
+.book-shadow--back {
+  left: 0;
+  right: 50%;
+  clip-path: inset(-200px 0 -200px -200px);
+  box-shadow:
+    0 3px 6px  rgba(0, 0, 0, 0.07),
+    0 10px 32px rgba(0, 0, 0, 0.09),
+    0 28px 64px rgba(0, 0, 0, 0.06);
+}
+
+/* Suppress page shading overlays when at either cover — no open spread,
+   so no spine shadow or page shading is appropriate.
+   opacity (not display:none) keeps the transition path live;
+   transition:none ensures it vanishes instantly with no visible flash. */
 .sketchbook.--at-cover .stf__item.--left .page-inner::after,
 .sketchbook.--at-cover .stf__item.--left .page-text-inner::after,
 .sketchbook.--at-cover .stf__item.--right .page-inner::after,
@@ -118,22 +195,59 @@
   background-repeat: repeat !important;
 }
 
-/* Ambient lighting overlay — sits above the texture, below any content.
-   Three stacked gradients:
-     1. Soft specular highlight (upper-centre, as if lit from above)
-     2. Edge vignette (corners and bottom fall into shadow)
-     3. Subtle warm-to-cool directional wash */
-.page-cover::after {
+/* Surface shading overlays — exact Figma gradient fills (node 179:379).
+   Three stacked layers per cover:
+     1. Spine-side edge darkening
+     2. Top/bottom edge darkening (180deg — same for both covers)
+     3. Outer-edge specular highlight + spine-side deep shadow
+   Front and back covers mirror each other horizontally. */
+
+/* Front cover — spine on LEFT, outer edge on RIGHT */
+.page-cover--front::after {
   content: '';
   position: absolute;
   inset: 0;
   pointer-events: none;
   background:
-    radial-gradient(ellipse at 50% 20%, rgba(255, 252, 245, 0.13) 0%, transparent 55%),
-    radial-gradient(ellipse at 50% 115%, rgba(0, 0, 0, 0.22) 0%, transparent 58%),
-    radial-gradient(ellipse at 0% 50%,   rgba(0, 0, 0, 0.10) 0%, transparent 50%),
-    radial-gradient(ellipse at 100% 50%, rgba(0, 0, 0, 0.10) 0%, transparent 50%),
-    linear-gradient(160deg, rgba(255,252,245,0.05) 0%, rgba(0,0,0,0.07) 100%);
+    linear-gradient(90deg,
+      rgba(0, 0, 0, 0.03)  0%,
+      rgba(0, 0, 0, 0)    100%),
+    linear-gradient(180deg,
+      rgba(0, 0, 0, 0.05)  0%,
+      rgba(0, 0, 0, 0)     1%,
+      rgba(0, 0, 0, 0)    99%,
+      rgba(0, 0, 0, 0.05) 100%),
+    linear-gradient(270deg,
+      rgba(255, 255, 255, 0.3)    0%,
+      rgba(255, 255, 255, 0)      1%,
+      rgba(0, 0, 0, 0)           96%,
+      rgba(0, 0, 0, 0.1)         97%,
+      rgba(0, 0, 0, 0.004)       99%,
+      rgba(0, 0, 0, 0.3)        100%);
+}
+
+/* Back cover — spine on RIGHT, outer edge on LEFT (mirrors front) */
+.page-cover--back::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(270deg,
+      rgba(0, 0, 0, 0.03)  0%,
+      rgba(0, 0, 0, 0)    100%),
+    linear-gradient(180deg,
+      rgba(0, 0, 0, 0.05)  0%,
+      rgba(0, 0, 0, 0)     1%,
+      rgba(0, 0, 0, 0)    99%,
+      rgba(0, 0, 0, 0.05) 100%),
+    linear-gradient(90deg,
+      rgba(255, 255, 255, 0.3)    0%,
+      rgba(255, 255, 255, 0)      1%,
+      rgba(0, 0, 0, 0)           96%,
+      rgba(0, 0, 0, 0.1)         97%,
+      rgba(0, 0, 0, 0.004)       99%,
+      rgba(0, 0, 0, 0.3)        100%);
 }
 
 .cover-inner {
@@ -220,6 +334,16 @@
   display: flex;
   align-items: center;
   justify-content: center;
+  position: relative;
+}
+
+/* Transparent intercept layer — blocks drag-to-save and extension scraping */
+.sketch-frame::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  pointer-events: all;
 }
 
 .sketch-img {
@@ -229,6 +353,10 @@
   height: auto;
   object-fit: contain;
   display: block;
+  pointer-events: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-user-drag: none;
 }
 
 /* ─── Multi-sketch grid ──────────────────────────────────────────────── */
@@ -252,6 +380,16 @@
   justify-content: center;
   gap: 4px;
   min-height: 0;
+  position: relative;
+}
+
+/* Transparent intercept layer for multi-grid images */
+.multi-cell::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  pointer-events: all;
 }
 
 .multi-img {
@@ -262,6 +400,10 @@
   object-fit: contain;
   display: block;
   flex-shrink: 1;
+  pointer-events: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-user-drag: none;
 }
 
 .multi-cell-caption {
