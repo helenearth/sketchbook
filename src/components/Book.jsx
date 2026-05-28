@@ -7,30 +7,37 @@ import './book.css'
 
 // Page aspect ratio — 1 = square pages
 const PAGE_AR = 1
-const MARGIN  = 80         // px each side — extra breathing room for flip animation
-const ROTATE_BREAKPOINT = 900  // px — rotate 90° below this viewport width
+// Vertical breathing room (top + bottom). Horizontal space is handled
+// as a viewport percentage so the book fills the screen proportionally.
+const V_MARGIN = 64        // px top + bottom combined headroom
 
 function calcDims() {
   const vw = window.innerWidth
   const vh = window.innerHeight
-  const shouldRotate = vw < ROTATE_BREAKPOINT
+  // Rotate the landscape book 90° when the device is in portrait orientation
+  // (phone/tablet held upright). matchMedia is more reliable than a viewport-
+  // width breakpoint — a narrow desktop window won't accidentally trigger it.
+  const shouldRotate = window.matchMedia('(orientation: portrait)').matches
 
   if (shouldRotate) {
     // Book renders landscape (2×pageW wide) but is visually rotated 90°.
     // After rotation: pageH → visual width, 2×pageW → visual height.
-    // PAGE_AR = 1 → pageH = pageW. Fit constraints:
-    //   pageW ≤ vw − 2×MARGIN  (visual width after rotation)
-    //   2×pageW ≤ vh − 2×MARGIN (visual height after rotation)
+    // PAGE_AR = 1 → pageH = pageW. Fit both constraints:
+    //   pageW ≤ vw * 0.80   (visual width after rotation — 80% of portrait width)
+    //   2×pageW ≤ vh * 0.90 (visual height after rotation — 90% of portrait height)
     const pageW = Math.min(
-      Math.floor(vw - MARGIN * 2),
-      Math.floor((vh - MARGIN * 2) / 2)
+      Math.floor(vw * 0.80),
+      Math.floor(vh * 0.45)
     )
     return { width: pageW, height: pageW, shouldRotate: true }
   }
 
-  const availW = vw - MARGIN * 2
-  const availH = vh - MARGIN * 2
-  let pageW = Math.floor(availW / 2)
+  // Landscape: each page = 40% of viewport width.
+  // Both pages together fill 80% vw; the remaining 20% absorbs the
+  // perspective overshoot of the 3D cover-flip animation so it never clips.
+  // Height caps the page if the viewport is too short (e.g. ultrawide).
+  const availH = vh - V_MARGIN
+  let pageW = Math.floor(vw * 0.40)
   let pageH = Math.floor(pageW * PAGE_AR)
   if (pageH > availH) {
     pageH = availH
@@ -119,6 +126,7 @@ export default function Book() {
   const openAudioRef    = useRef(null)   // cover opens
   const closeAudioRef   = useRef(null)   // cover closes
   const flipDirectionRef = useRef('forward') // 'forward' | 'backward'
+  const currentPageRef   = useRef(0)         // persists page index across resize remounts
   const [dims, setDims] = useState(calcDims)
   const [hintVisible, setHintVisible] = useState(true)
   // True when the cover is showing alone — controls page-shading overlay suppression.
@@ -151,11 +159,24 @@ export default function Book() {
     closeAudioRef.current.preload = 'auto'
   }, [])
 
-  // Responsive sizing
+  // Responsive sizing — recalculate on resize and on device orientation change.
+  // react-pageflip does not live-resize its page elements when width/height props
+  // change; it only applies them on mount. The key prop on HTMLFlipBook forces a
+  // full remount whenever dims settle. The debounce (200 ms) prevents remounting
+  // on every pixel during a window drag — only fires after the user stops resizing.
   useEffect(() => {
-    const onResize = () => setDims(calcDims())
+    let timer
+    const onResize = () => {
+      clearTimeout(timer)
+      timer = setTimeout(() => setDims(calcDims()), 200)
+    }
     window.addEventListener('resize', onResize)
-    return () => window.removeEventListener('resize', onResize)
+    window.addEventListener('orientationchange', onResize)
+    return () => {
+      clearTimeout(timer)
+      window.removeEventListener('resize', onResize)
+      window.removeEventListener('orientationchange', onResize)
+    }
   }, [])
 
   // Fade hint after 6 s
@@ -213,6 +234,7 @@ export default function Book() {
   const handleFlip = useCallback((e) => {
     if (e?.data !== undefined) {
       const pg = e.data
+      currentPageRef.current = pg          // remember position for resize remounts
       const nowAtCover = pg === 0 || pg === pages.length + 1
       setAtCover(nowAtCover)
       if (pg === 0) {
@@ -314,6 +336,7 @@ export default function Book() {
           className={`book-shadow book-shadow--${shadowMode}`}
         />
         <HTMLFlipBook
+          key={`${dims.width}x${dims.height}`}
           ref={bookRef}
           width={dims.width}
           height={dims.height}
@@ -327,7 +350,7 @@ export default function Book() {
           mobileScrollSupport={false}
           clickEventForward={false}
           useMouseEvents
-          startPage={0}
+          startPage={currentPageRef.current}
           onFlip={handleFlip}
           onChangeState={handleChangeState}
         >

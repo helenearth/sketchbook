@@ -1,12 +1,8 @@
 /* ─── Scene wrapper ──────────────────────────────────────────────────── */
-/* NOTE: no `filter` here — CSS filter creates a new compositing layer   */
-/* that breaks react-pageflip's transform-style:preserve-3d flip.        */
-/* scale(0.85) gives the flip animation room to breathe: during a 3D     */
-/* cover flip the perspective-foreshortened near edge visually extends   */
-/* well beyond the book's DOM bounds. The scale compresses the entire     */
-/* rendered subtree — including that 3D overshoot — before compositing.  */
-/* Unlike filter, transform on a non-preserve-3d ancestor does NOT       */
-/* flatten descendants' preserve-3d contexts, so the flip is unaffected. */
+/* NOTE: no `filter` or `transform` here — both create a new compositing  */
+/* layer that flattens react-pageflip's transform-style:preserve-3d flip. */
+/* Sizing is handled entirely in calcDims() (40% vw per page in landscape, */
+/* percentage-based in portrait) so no CSS scale correction is needed.    */
 .book-scene {
   position: relative;
   display: inline-flex;
@@ -14,7 +10,6 @@
   justify-content: center;
   user-select: none;
   -webkit-user-select: none;
-  transform: scale(0.85);
 }
 
 /* ─── Portrait / small-screen rotation (< 900 px wide) ──────────────── */
