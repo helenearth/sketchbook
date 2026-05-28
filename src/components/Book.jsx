@@ -188,16 +188,16 @@ export default function Book() {
   // Fires at flip START — play audio immediately so sound leads the animation.
   // Also synchronously update overlay/shadow state before the first animation frame:
   //
-  //   Closing to a cover → coverSide + correct shadowMode only.
-  //     atCover deliberately stays false so the relevant overlay (right page when
-  //     front cover closes, left page when back cover closes) remains visible during
-  //     the animation. handleFlip sets atCover=true (transition:none) at flip END.
+  //   Closing to a cover → coverSide + shadowMode set to the correct half.
+  //     atCover deliberately stays false so the overlay on the page being covered
+  //     remains visible during the animation. handleFlip sets atCover=true at flip END.
   //
-  //   Opening from a cover → atCover=false + shadowMode='transition'.
+  //   Opening from a cover → atCover=false only; shadowMode is NOT changed.
   //     Overlays begin fading in as the cover lifts.
-  //     shadowMode switches to 'transition' so the book-shadow disappears entirely
-  //     during the animation (nothing can bleed onto the revealed content page).
-  //     It advances to 'open' only at flip END (handleFlip).
+  //     The drop shadow stays in its current half-width mode ('front'/'back'),
+  //     which correctly represents the cover's footprint as it lifts.
+  //     handleFlip expands it to 'open' at flip END; a CSS transition on
+  //     .book-shadow smooths that expansion so it never pops.
   const handleChangeState = useCallback((e) => {
     if (e.data === 'flipping') {
       const pg = bookRef.current?.pageFlip()?.getCurrentPageIndex()
@@ -222,8 +222,13 @@ export default function Book() {
             setCoverSide(side)
             setShadowMode(side)   // position shadow on the correct half immediately
           } else {
-            setAtCover(false)        // overlays fade in during the animation
-            setShadowMode('transition') // suppress book-shadow entirely during cover-open animation
+            // Opening: overlays begin fading in AND shadow starts expanding
+            // immediately. Setting 'open' here lets the CSS transition on
+            // .book-shadow animate left: 50%→0 and clip-path over flippingTime
+            // so the shadow grows in lock-step with the cover sweep — physically
+            // correct. handleFlip also sets 'open' at flip END (idempotent).
+            setAtCover(false)
+            setShadowMode('open')
           }
         })
       }

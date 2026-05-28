@@ -116,24 +116,27 @@
   top: 0;
   bottom: 0;
   pointer-events: none;
+  /* Transition duration matches flippingTime (880 ms) so the shadow expands /
+     contracts in lock-step with the cover sweep — physically correct.
+     clip-path must transition alongside left/right so the box-shadow bleed
+     on the revealing side unlocks gradually rather than popping in all at once. */
+  transition:
+    left        0.88s ease,
+    right       0.88s ease,
+    clip-path   0.88s ease;
 }
 
-/* Open spread — shadow spans the full two-page width */
+/* Open spread — shadow spans the full two-page width.
+   clip-path uses inset() (same form as front/back) so the CSS transition
+   can animate smoothly between half-width and full-width states. */
 .book-shadow--open {
   left: 0;
   right: 0;
+  clip-path: inset(-200px);
   box-shadow:
     0 3px 6px  rgba(0, 0, 0, 0.06),
     0 10px 32px rgba(0, 0, 0, 0.08),
     0 28px 72px rgba(0, 0, 0, 0.05);
-}
-
-/* Cover opening animation — no book-shadow at all so nothing can bleed
-   onto the content page being revealed underneath the turning cover. */
-.book-shadow--transition {
-  left: 0;
-  right: 0;
-  box-shadow: none;
 }
 
 /* Front cover occupies the RIGHT half of the book div.
